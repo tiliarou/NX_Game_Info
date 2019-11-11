@@ -3,13 +3,23 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+#if WINDOWS
+using System.Reflection;
+#endif
 using System.Text;
+#if MACOS
+using System.Text.RegularExpressions;
+#endif
 using System.Xml.Linq;
+#if MACOS
+using Foundation;
+#endif
 using LibHac;
 using LibHac.IO;
 using Newtonsoft.Json;
 using FsTitle = LibHac.Title;
 using Title = NX_Game_Info.Common.Title;
+using ArrayOfTitle = NX_Game_Info.Common.ArrayOfTitle;
 
 #pragma warning disable RECS0022 // A catch clause that catches System.Exception and has an empty body
 #pragma warning disable RECS0061 // Warns when a culture-aware 'EndsWith' call is used by default.
@@ -116,7 +126,8 @@ namespace NX_Game_Info
                         titleID = titleID.Substring(0, Math.Min(titleID.Length, 13)) + "000";
                     }
 
-                    versionList.Add(titleID.ToUpper(), title.version);
+                    versionList.TryGetValue(titleID.ToUpper(), out uint version);
+                    versionList[titleID.ToUpper()] = Math.Max(version, title.version);
                 }
 
                 log?.WriteLine("Found {0} titles, last modified at {1}", versionList.Count, versionlist.last_modified);
@@ -126,6 +137,102 @@ namespace NX_Game_Info
             log?.WriteLine("Initialization success");
 
             return true;
+        }
+
+        public static void migrateSettings()
+        {
+            int version = Common.Settings.Default.Version;
+
+            if (version < 00_06_00_00)
+            {
+#if WINDOWS
+                int columnIndex = Common.Settings.Default.Columns.FindIndex(x => x.Equals("firmware"));
+                if (columnIndex != -1)
+                {
+                    Common.Settings.Default.Columns.RemoveAt(columnIndex);
+                    Common.Settings.Default.Columns.InsertRange(columnIndex, new string[] { "systemUpdateString", "systemVersionString", "applicationVersionString" });
+
+                    Common.Settings.Default.ColumnWidth.RemoveAt(columnIndex);
+                    Common.Settings.Default.ColumnWidth.InsertRange(columnIndex, new int[] { 100, 100, 100 });
+                }
+#endif
+            }
+            if (version < 00_07_00_00)
+            {
+#if WINDOWS
+                int columnIndex = Common.Settings.Default.Columns.FindIndex(x => x.Equals("filename") || x.Equals("filesizeString") ||
+                    x.Equals("typeString") || x.Equals("distribution") || x.Equals("structureString") || x.Equals("signatureString") || x.Equals("permissionString") || x.Equals("error"));
+                if (columnIndex == -1)
+                {
+                    columnIndex = Common.Settings.Default.Columns.Count;
+                }
+                Common.Settings.Default.Columns.InsertRange(columnIndex, new string[] { "titleKey", "publisher" });
+                Common.Settings.Default.ColumnWidth.InsertRange(columnIndex, new int[] { 240, 200 });
+#endif
+            }
+            if (version < 00_07_00_01)
+            {
+#if WINDOWS
+                int columnIndex = Common.Settings.Default.Columns.FindIndex(x => x.Equals("filename") || x.Equals("filesizeString") ||
+                    x.Equals("typeString") || x.Equals("distribution") || x.Equals("structureString") || x.Equals("signatureString") || x.Equals("permissionString") || x.Equals("error"));
+                if (columnIndex == -1)
+                {
+                    columnIndex = Common.Settings.Default.Columns.Count;
+                }
+                Common.Settings.Default.Columns.InsertRange(columnIndex, new string[] { "languagesString" });
+                Common.Settings.Default.ColumnWidth.InsertRange(columnIndex, new int[] { 120 });
+#endif
+            }
+
+#if WINDOWS
+            Common.Settings.Default.Version = Assembly.GetExecutingAssembly().GetName().Version.ToInt();
+#elif MACOS
+            string versionString = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString").ToString();
+            Match match = Regex.Match(versionString, @"\d+(\.\d+)*");
+            if (match.Success)
+            {
+                if (Version.TryParse(match.Value, out Version ver))
+                {
+                    Common.Settings.Default.Version = ver.ToInt();
+                }
+            }
+#endif
+        }
+
+        public static bool updateTitleKeys()
+        {
+            string title_keys = path_prefix + Common.TITLE_KEYS;
+
+            try
+            {
+                log?.WriteLine("\nDownloading title keys");
+
+                using (var httpClient = new HttpClient())
+                {
+                    var response = httpClient.GetAsync(Common.TITLE_KEYS_URI).Result;
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var content = response.Content.ReadAsStringAsync().Result;
+                        if (!String.IsNullOrEmpty(content))
+                        {
+                            File.WriteAllText(title_keys, content);
+
+                            ExternalKeys.ReadTitleKeys(keyset, title_keys);
+
+                            log?.WriteLine("Found {0} title keys", keyset?.TitleKeys?.Count);
+
+                            titleNames = keyset.TitleNames.GroupBy(p => BitConverter.ToString(p.Key.Take(8).ToArray()).Replace("-", "").ToUpper()).ToDictionary(p => p.Key, p => p.Last().Value);
+                            titleVersions = keyset.TitleVersions.GroupBy(p => BitConverter.ToString(p.Key.Take(8).ToArray()).Replace("-", "").ToUpper()).ToDictionary(p => p.Key, p => p.Last().Value);
+
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return false;
         }
 
         public static bool updateVersionList()
@@ -138,7 +245,7 @@ namespace NX_Game_Info
 
                 using (var httpClient = new HttpClient())
                 {
-                    var response = httpClient.GetAsync(Common.TAGAYA_VERSIONLIST).Result;
+                    var response = httpClient.GetAsync(Common.HAC_VERSIONLIST_URI).Result;
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -157,7 +264,8 @@ namespace NX_Game_Info
                                     titleID = titleID.Substring(0, Math.Min(titleID.Length, 13)) + "000";
                                 }
 
-                                versionList.Add(titleID.ToUpper(), title.version);
+                                versionList.TryGetValue(titleID.ToUpper(), out uint version);
+                                versionList[titleID.ToUpper()] = Math.Max(version, title.version);
                             }
 
                             log?.WriteLine("Found {0} titles, last modified at {1}", versionList.Count, versionlist.last_modified);
@@ -185,7 +293,7 @@ namespace NX_Game_Info
                 title.filename = filename;
                 title.filesize = new FileInfo(filename).Length;
 
-                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.titleIDApplication;
+                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.baseTitleID ?? "";
 
                 if (latestVersions.TryGetValue(titleID, out uint version))
                 {
@@ -229,93 +337,145 @@ namespace NX_Game_Info
                     xci = new Xci(keyset, filestream.AsStorage());
 
                     title.distribution = Title.Distribution.Cartridge;
+
+                    log?.WriteLine("Processing XCI {0}", filename);
+
+                    if (xci.RootPartition?.Files.Length > 0)
+                    {
+                        title.structure.Add(Title.Structure.RootPartition);
+                    }
+
+                    if (xci.UpdatePartition?.Files.Length > 0)
+                    {
+                        PfsFileEntry[] fileEntries = xci.UpdatePartition.Files;
+
+                        List<string> cnmtNca = fileEntries.Select(x => x.Name).Where(x => x.EndsWith(".cnmt.nca")).Intersect(Title.SystemUpdate.Keys).ToList();
+                        if (cnmtNca.Any())
+                        {
+                            uint systemUpdate = unchecked((uint)-1);
+                            Title.SystemUpdate.TryGetValue(cnmtNca.First(), out systemUpdate);
+                            title.systemUpdate = systemUpdate;
+                        }
+
+                        title.structure.Add(Title.Structure.UpdatePartition);
+                    }
+
+                    if (xci.NormalPartition?.Files.Length > 0)
+                    {
+                        title.structure.Add(Title.Structure.NormalPartition);
+                    }
+
+                    if (xci.SecurePartition?.Files.Length > 0)
+                    {
+                        PfsFileEntry[] fileEntries = xci.SecurePartition.Files;
+                        foreach (PfsFileEntry entry in fileEntries)
+                        {
+                            if (entry.Name.EndsWith(".cnmt.nca"))
+                            {
+                                try
+                                {
+                                    using (var cnmtNca = xci.SecurePartition.OpenFile(entry))
+                                    {
+                                        var nca = processCnmtNca(cnmtNca, ref title);
+                                        if (nca.Item1 != null && (nca.Item2 != null || title.type == TitleType.AddOnContent))
+                                        {
+                                            (biggestNca, controlNca) = nca;
+                                        }
+                                    }
+                                }
+                                catch (FileNotFoundException)
+                                {
+                                    if (xci.SecurePartition.FileExists(entry.Name.Replace(".nca", ".ncz")))
+                                    {
+                                        title.error = "Unsupported Format: Compressed NCA";
+                                    }
+                                }
+
+                                title.structure.Add(Title.Structure.CnmtNca);
+                            }
+                            else if (entry.Name.EndsWith(".cert"))
+                            {
+                                title.structure.Add(Title.Structure.Cert);
+                            }
+                            else if (entry.Name.EndsWith(".tik"))
+                            {
+                                try
+                                {
+                                    using (var tik = xci.SecurePartition.OpenFile(entry))
+                                    {
+                                        if (entry.Name.Split('.')[0].TryToBytes(out byte[] rightsId))
+                                        {
+                                            processTik(tik, rightsId, ref keyset, out byte[] titleKey);
+
+                                            title.titleKey = BitConverter.ToString(titleKey).Replace("-", "").ToUpper();
+                                        }
+                                    }
+                                }
+                                catch (FileNotFoundException)
+                                {
+                                    if (xci.SecurePartition.FileExists(entry.Name.Replace(".nca", ".ncz")))
+                                    {
+                                        title.error = "Unsupported Format: Compressed NCA";
+                                    }
+                                }
+
+                                title.structure.Add(Title.Structure.Tik);
+                            }
+                        }
+
+                        if (!String.IsNullOrEmpty(biggestNca))
+                        {
+                            try
+                            {
+                                using (var biggest = xci.SecurePartition.OpenFile(biggestNca))
+                                {
+                                    processBiggestNca(biggest, ref title);
+                                }
+                            }
+                            catch (FileNotFoundException)
+                            {
+                                if (xci.SecurePartition.FileExists(biggestNca.Replace(".nca", ".ncz")))
+                                {
+                                    title.error = "Unsupported Format: Compressed NCA";
+                                }
+                            }
+                        }
+
+                        if (!String.IsNullOrEmpty(controlNca))
+                        {
+                            try
+                            {
+                                using (var control = xci.SecurePartition.OpenFile(controlNca))
+                                {
+                                    processControlNca(control, ref title);
+                                }
+                            }
+                            catch (FileNotFoundException)
+                            {
+                                if (xci.SecurePartition.FileExists(controlNca.Replace(".nca", ".ncz")))
+                                {
+                                    title.error = "Unsupported Format: Compressed NCA";
+                                }
+                            }
+                        }
+
+                        title.structure.Add(Title.Structure.SecurePartition);
+                    }
+
+                    if (xci.LogoPartition?.Files.Length > 0)
+                    {
+                        title.structure.Add(Title.Structure.LogoPartition);
+                    }
                 }
                 catch (InvalidDataException)
                 {
                     return null;
                 }
-
-                log?.WriteLine("Processing XCI {0}", filename);
-
-                if (xci.RootPartition?.Files.Length > 0)
-                {
-                    title.structure.Add(Title.Structure.RootPartition);
-                }
-
-                if (xci.UpdatePartition?.Files.Length > 0)
-                {
-                    title.structure.Add(Title.Structure.UpdatePartition);
-                }
-
-                if (xci.NormalPartition?.Files.Length > 0)
-                {
-                    title.structure.Add(Title.Structure.NormalPartition);
-                }
-
-                if (xci.SecurePartition?.Files.Length > 0)
-                {
-                    PfsFileEntry[] fileEntries = xci.SecurePartition.Files;
-                    foreach (PfsFileEntry entry in fileEntries)
-                    {
-                        if (entry.Name.EndsWith(".cnmt.nca"))
-                        {
-                            using (var cnmtNca = xci.SecurePartition.OpenFile(entry))
-                            {
-                                var nca = processCnmtNca(cnmtNca, ref title);
-                                if (nca.Item1 != null && (nca.Item2 != null || title.type == TitleType.AddOnContent))
-                                {
-                                    (biggestNca, controlNca) = nca;
-                                }
-                            }
-
-                            title.structure.Add(Title.Structure.CnmtNca);
-                        }
-                        else if (entry.Name.EndsWith(".cert"))
-                        {
-                            title.structure.Add(Title.Structure.Cert);
-                        }
-                        else if (entry.Name.EndsWith(".tik"))
-                        {
-                            using (var tik = xci.SecurePartition.OpenFile(entry))
-                            {
-                                if (entry.Name.Split('.')[0].TryToBytes(out byte[] rightsId))
-                                {
-                                    processTik(tik, rightsId, ref keyset);
-                                }
-                            }
-
-                            title.structure.Add(Title.Structure.Tik);
-                        }
-                    }
-
-                    if (!String.IsNullOrEmpty(biggestNca))
-                    {
-                        using (var biggest = xci.SecurePartition.OpenFile(biggestNca))
-                        {
-                            processBiggestNca(biggest, ref title);
-                        }
-                    }
-
-                    if (!String.IsNullOrEmpty(controlNca))
-                    {
-                        using (var control = xci.SecurePartition.OpenFile(controlNca))
-                        {
-                            processControlNca(control, ref title);
-                        }
-                    }
-
-                    title.structure.Add(Title.Structure.SecurePartition);
-                }
-
-                if (xci.LogoPartition?.Files.Length > 0)
-                {
-                    title.structure.Add(Title.Structure.LogoPartition);
-                }
             }
 
             if (title.type == TitleType.Application || title.type == TitleType.Patch)
             {
-                if (versionList.TryGetValue(title.titleIDApplication, out uint version))
+                if (versionList.TryGetValue(title.baseTitleID, out uint version))
                 {
                     title.latestVersion = version;
                 }
@@ -340,102 +500,152 @@ namespace NX_Game_Info
                     pfs = new Pfs(filestream.AsStorage());
 
                     title.distribution = Title.Distribution.Digital;
+
+                    log?.WriteLine("Processing NSP {0}", filename);
+
+                    PfsFileEntry[] fileEntries = pfs.Files;
+                    foreach (PfsFileEntry entry in fileEntries)
+                    {
+                        if (entry.Name.EndsWith(".cnmt.xml"))
+                        {
+                            try
+                            {
+                                using (var cnmtXml = pfs.OpenFile(entry))
+                                {
+                                    (biggestNca, controlNca) = processCnmtXml(cnmtXml, ref title);
+                                }
+                            }
+                            catch (FileNotFoundException) { }
+
+                            title.structure.Add(Title.Structure.CnmtXml);
+                        }
+                        else if (entry.Name.EndsWith(".cnmt.nca"))
+                        {
+                            try
+                            {
+                                using (var cnmtNca = pfs.OpenFile(entry))
+                                {
+                                    var nca = processCnmtNca(cnmtNca, ref title);
+                                    if (nca.Item1 != null && (nca.Item2 != null || title.type == TitleType.AddOnContent))
+                                    {
+                                        (biggestNca, controlNca) = nca;
+                                    }
+                                }
+                            }
+                            catch (FileNotFoundException)
+                            {
+                                if (pfs.FileExists(entry.Name.Replace(".nca", ".ncz")))
+                                {
+                                    title.error = "Unsupported Format: Compressed NCA";
+                                }
+                            }
+
+                            title.structure.Add(Title.Structure.CnmtNca);
+                        }
+                        else if (entry.Name.EndsWith(".cert"))
+                        {
+                            title.structure.Add(Title.Structure.Cert);
+                        }
+                        else if (entry.Name.EndsWith(".tik"))
+                        {
+                            try
+                            {
+                                using (var tik = pfs.OpenFile(entry))
+                                {
+                                    if (entry.Name.Split('.')[0].TryToBytes(out byte[] rightsId))
+                                    {
+                                        processTik(tik, rightsId, ref keyset, out byte[] titleKey);
+
+                                        title.titleKey = BitConverter.ToString(titleKey).Replace("-", "").ToUpper();
+                                    }
+                                }
+                            }
+                            catch (FileNotFoundException)
+                            {
+                                if (pfs.FileExists(entry.Name.Replace(".nca", ".ncz")))
+                                {
+                                    title.error = "Unsupported Format: Compressed NCA";
+                                }
+                            }
+
+                            title.structure.Add(Title.Structure.Tik);
+                        }
+                        else if (entry.Name.EndsWith(".legalinfo.xml"))
+                        {
+                            title.structure.Add(Title.Structure.LegalinfoXml);
+                        }
+                        else if (entry.Name.EndsWith(".nacp.xml"))
+                        {
+                            try
+                            {
+                                using (var nacpXml = pfs.OpenFile(entry))
+                                {
+                                    processNacpXml(nacpXml, ref title);
+                                }
+                            }
+                            catch (FileNotFoundException) { }
+
+                            title.structure.Add(Title.Structure.NacpXml);
+                        }
+                        else if (entry.Name.EndsWith(".programinfo.xml"))
+                        {
+                            title.structure.Add(Title.Structure.PrograminfoXml);
+                        }
+                        else if (entry.Name.Equals("cardspec.xml"))
+                        {
+                            title.structure.Add(Title.Structure.CardspecXml);
+                        }
+                        else if (entry.Name.Equals("authoringtoolinfo.xml"))
+                        {
+                            title.structure.Add(Title.Structure.AuthoringtoolinfoXml);
+                        }
+                    }
+
+                    if (!String.IsNullOrEmpty(biggestNca))
+                    {
+                        try
+                        {
+                            using (var biggest = pfs.OpenFile(biggestNca))
+                            {
+                                processBiggestNca(biggest, ref title);
+                            }
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            if (pfs.FileExists(biggestNca.Replace(".nca", ".ncz")))
+                            {
+                                title.error = "Unsupported Format: Compressed NCA";
+                            }
+                        }
+                    }
+
+                    if (!String.IsNullOrEmpty(controlNca))
+                    {
+                        try
+                        {
+                            using (var control = pfs.OpenFile(controlNca))
+                            {
+                                processControlNca(control, ref title);
+                            }
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            if (pfs.FileExists(controlNca.Replace(".nca", ".ncz")))
+                            {
+                                title.error = "Unsupported Format: Compressed NCA";
+                            }
+                        }
+                    }
                 }
                 catch (InvalidDataException)
                 {
                     return null;
                 }
-
-                log?.WriteLine("Processing NSP {0}", filename);
-
-                PfsFileEntry[] fileEntries = pfs.Files;
-                foreach (PfsFileEntry entry in fileEntries)
-                {
-                    if (entry.Name.EndsWith(".cnmt.xml"))
-                    {
-                        using (var cnmtXml = pfs.OpenFile(entry))
-                        {
-                            (biggestNca, controlNca) = processCnmtXml(cnmtXml, ref title);
-                        }
-
-                        title.structure.Add(Title.Structure.CnmtXml);
-                    }
-                    else if (entry.Name.EndsWith(".cnmt.nca"))
-                    {
-                        using (var cnmtNca = pfs.OpenFile(entry))
-                        {
-                            var nca = processCnmtNca(cnmtNca, ref title);
-                            if (nca.Item1 != null && (nca.Item2 != null || title.type == TitleType.AddOnContent))
-                            {
-                                (biggestNca, controlNca) = nca;
-                            }
-                        }
-
-                        title.structure.Add(Title.Structure.CnmtNca);
-                    }
-                    else if (entry.Name.EndsWith(".cert"))
-                    {
-                        title.structure.Add(Title.Structure.Cert);
-                    }
-                    else if (entry.Name.EndsWith(".tik"))
-                    {
-                        using (var tik = pfs.OpenFile(entry))
-                        {
-                            if (entry.Name.Split('.')[0].TryToBytes(out byte[] rightsId))
-                            {
-                                processTik(tik, rightsId, ref keyset);
-                            }
-                        }
-
-                        title.structure.Add(Title.Structure.Tik);
-                    }
-                    else if (entry.Name.EndsWith(".legalinfo.xml"))
-                    {
-                        title.structure.Add(Title.Structure.LegalinfoXml);
-                    }
-                    else if (entry.Name.EndsWith(".nacp.xml"))
-                    {
-                        using (var nacpXml = pfs.OpenFile(entry))
-                        {
-                            processNacpXml(nacpXml, ref title);
-                        }
-
-                        title.structure.Add(Title.Structure.NacpXml);
-                    }
-                    else if (entry.Name.EndsWith(".programinfo.xml"))
-                    {
-                        title.structure.Add(Title.Structure.PrograminfoXml);
-                    }
-                    else if (entry.Name.Equals("cardspec.xml"))
-                    {
-                        title.structure.Add(Title.Structure.CardspecXml);
-                    }
-                    else if (entry.Name.Equals("authoringtoolinfo.xml"))
-                    {
-                        title.structure.Add(Title.Structure.AuthoringtoolinfoXml);
-                    }
-                }
-
-                if (!String.IsNullOrEmpty(biggestNca))
-                {
-                    using (var biggest = pfs.OpenFile(biggestNca))
-                    {
-                        processBiggestNca(biggest, ref title);
-                    }
-                }
-
-                if (!String.IsNullOrEmpty(controlNca))
-                {
-                    using (var control = pfs.OpenFile(controlNca))
-                    {
-                        processControlNca(control, ref title);
-                    }
-                }
             }
 
             if (title.type == TitleType.Application || title.type == TitleType.Patch)
             {
-                if (versionList.TryGetValue(title.titleIDApplication, out uint version))
+                if (versionList.TryGetValue(title.baseTitleID, out uint version))
                 {
                     title.latestVersion = version;
                 }
@@ -459,17 +669,17 @@ namespace NX_Game_Info
                     nro = new Nro(filestream.AsStorage());
 
                     title.distribution = Title.Distribution.Homebrew;
+
+                    log?.WriteLine("Processing NRO {0}", filename);
+
+                    using (var control = nro.OpenNacp().AsStream())
+                    {
+                        processControlNacp(control, ref title);
+                    }
                 }
                 catch (InvalidDataException)
                 {
                     return null;
-                }
-
-                log?.WriteLine("Processing NRO {0}", filename);
-
-                using (var control = nro.OpenNacp().AsStream())
-                {
-                    processControlNacp(control, ref title);
                 }
             }
 
@@ -482,35 +692,36 @@ namespace NX_Game_Info
         {
             try
             {
-                var fs = new SwitchFs(keyset, new FileSystem(path));
-
-                log?.WriteLine("{0} of {1} NCA processed", fs?.Titles?.Select(title => title.Value.Ncas.Count)?.Sum(), fs?.Ncas?.Count);
-
-                List<Application> applications = fs?.Applications?.Values?.ToList() ?? new List<Application>();
-
-                log?.WriteLine("Found {0} applications", applications?.Count);
-
-                List<FsTitle> fsTitles = new List<FsTitle>();
-
-                foreach (Application application in applications)
+                using (var fs = new SwitchFs(keyset, new FileSystem(path), true))
                 {
-                    if (application.Main != null)
+                    log?.WriteLine("{0} of {1} NCA processed", fs?.Titles?.Select(title => title.Value.Ncas.Count)?.Sum(), fs?.Ncas?.Count);
+
+                    List<Application> applications = fs?.Applications?.Values?.ToList() ?? new List<Application>();
+
+                    log?.WriteLine("Found {0} applications", applications?.Count);
+
+                    List<FsTitle> fsTitles = new List<FsTitle>();
+
+                    foreach (Application application in applications)
                     {
-                        if (application.Main.MetaNca != null || application.Patch?.MetaNca == null)
+                        if (application.Main != null)
                         {
-                            fsTitles.Add(application.Main);
+                            if (application.Main.MetaNca != null || application.Patch?.MetaNca == null)
+                            {
+                                fsTitles.Add(application.Main);
+                            }
                         }
+
+                        if (application.Patch?.MetaNca != null)
+                        {
+                            fsTitles.Add(application.Patch);
+                        }
+
+                        fsTitles.AddRange(application.AddOnContent);
                     }
 
-                    if (application.Patch?.MetaNca != null)
-                    {
-                        fsTitles.Add(application.Patch);
-                    }
-
-                    fsTitles.AddRange(application.AddOnContent);
+                    return fsTitles.OrderBy(fsTitle => fsTitle.Id).ToList();
                 }
-
-                return fsTitles.OrderBy(fsTitle => fsTitle.Id).ToList();
             }
             catch (DirectoryNotFoundException)
             {
@@ -570,7 +781,7 @@ namespace NX_Game_Info
 
             if (title.type == TitleType.Application || title.type == TitleType.Patch)
             {
-                if (versionList.TryGetValue(title.titleIDApplication, out uint version))
+                if (versionList.TryGetValue(title.baseTitleID, out uint version))
                 {
                     title.latestVersion = version;
                 }
@@ -583,7 +794,7 @@ namespace NX_Game_Info
 
             if (title.version > 0)
             {
-                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.titleIDApplication;
+                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.baseTitleID ?? "";
 
                 if (latestVersions.TryGetValue(titleID, out uint version))
                 {
@@ -627,38 +838,10 @@ namespace NX_Game_Info
             title.type = titleType;
 
             title.titleID = xml.Element("ContentMeta").Element("Id").Value.Remove(1, 2).ToUpper();
+            title.baseTitleID = String.IsNullOrEmpty(title.titleID) ? "" : title.titleID.Substring(0, Math.Min(title.titleID.Length, 13)) + "000";
             title.version = Convert.ToUInt32(xml.Element("ContentMeta").Element("Version").Value);
 
-            uint firmware = (uint)(Convert.ToUInt64(xml.Element("ContentMeta").Element("RequiredSystemVersion").Value) % 0x100000000);
-            if (firmware == 0)
-            {
-                title.firmware = "0";
-            }
-            else if (firmware <= 450)
-            {
-                title.firmware = "1.0.0";
-            }
-            else if (firmware <= 65796)
-            {
-                title.firmware = "2.0.0";
-            }
-            else if (firmware <= 131162)
-            {
-                title.firmware = "2.1.0";
-            }
-            else if (firmware <= 196628)
-            {
-                title.firmware = "2.2.0";
-            }
-            else if (firmware <= 262164)
-            {
-                title.firmware = "2.3.0";
-            }
-            else
-            {
-                title.firmware = ((firmware >> 26) & 0x3F) + "." + ((firmware >> 20) & 0x3F) + "." + ((firmware >> 16) & 0x0F);
-            }
-
+            title.systemUpdate = (uint)(Convert.ToUInt64(xml.Element("ContentMeta").Element("RequiredSystemVersion").Value) % 0x100000000);
             title.masterkey = (uint)Math.Max(Convert.ToInt32(xml.Element("ContentMeta").Element("KeyGenerationMin").Value) - 1, 0);
 
             foreach (XElement element in xml.Descendants("Content"))
@@ -712,37 +895,11 @@ namespace NX_Game_Info
                         title.type = cnmt.Type;
 
                         title.titleID = String.Format("{0:X16}", cnmt.TitleId);
+                        title.baseTitleID = String.Format("{0:X16}", cnmt.ApplicationTitleId);
                         title.version = cnmt.TitleVersion?.Version ?? title.version;
 
-                        uint firmware = cnmt.MinimumSystemVersion?.Version ?? 0;
-                        if (firmware == 0)
-                        {
-                            title.firmware = "0";
-                        }
-                        else if (firmware <= 450)
-                        {
-                            title.firmware = "1.0.0";
-                        }
-                        else if (firmware <= 65796)
-                        {
-                            title.firmware = "2.0.0";
-                        }
-                        else if (firmware <= 131162)
-                        {
-                            title.firmware = "2.1.0";
-                        }
-                        else if (firmware <= 196628)
-                        {
-                            title.firmware = "2.2.0";
-                        }
-                        else if (firmware <= 262164)
-                        {
-                            title.firmware = "2.3.0";
-                        }
-                        else
-                        {
-                            title.firmware = ((firmware >> 26) & 0x3F) + "." + ((firmware >> 20) & 0x3F) + "." + ((firmware >> 16) & 0x0F);
-                        }
+                        title.systemVersion = cnmt.MinimumSystemVersion?.Version ?? unchecked((uint)-1);
+                        title.applicationVersion = cnmt.MinimumApplicationVersion?.Version ?? unchecked((uint)-1);
 
                         if (cnmtContent)
                         {
@@ -784,6 +941,7 @@ namespace NX_Game_Info
 
                 log?.WriteLine(title.error);
             }
+            catch (FileNotFoundException) { }
 
             return (biggestNca, controlNca);
         }
@@ -854,7 +1012,7 @@ namespace NX_Game_Info
                 {
                     title.titleName = titleName;
                 }
-                else if (titleNames.TryGetValue(title.titleIDApplication, out titleName))
+                else if (titleNames.TryGetValue(title.baseTitleID, out titleName))
                 {
                     title.titleName = titleName;
 
@@ -924,6 +1082,7 @@ namespace NX_Game_Info
 
                     log?.WriteLine(title.error);
                 }
+                catch (FileNotFoundException) { }
             }
         }
 
@@ -982,24 +1141,31 @@ namespace NX_Game_Info
 
             Nacp nacp = new Nacp(controlNacp);
 
+            bool first = true;
             foreach (NacpDescription description in nacp.Descriptions)
             {
                 if (!String.IsNullOrEmpty(description.Title))
                 {
-                    title.titleName = description.Title;
-                    break;
+                    if (first)
+                    {
+                        title.titleName = description.Title;
+                        title.publisher = description.Developer;
+                        first = false;
+                    }
+
+                    title.languages.Add(Title.LanguageCode.ElementAtOrDefault((int)description.Language));
                 }
             }
 
             title.displayVersion = nacp.DisplayVersion;
         }
 
-        private static void processTik(IStorage tik, byte[] rightsId, ref Keyset keyset)
+        private static void processTik(IStorage tik, byte[] rightsId, ref Keyset keyset, out byte[] titleKey)
         {
             log?.WriteLine("Processing TIK");
 
             const int TitleKeySize = 0x10;
-            byte[] titleKey = new byte[TitleKeySize];
+            titleKey = new byte[TitleKeySize];
 
             Stream stream = tik.AsStream();
             stream.Seek(0x180, SeekOrigin.Begin);
@@ -1012,13 +1178,14 @@ namespace NX_Game_Info
             }
         }
 
-        public static List<Title> processHistory()
+        public static List<Title> processHistory(int index = -1)
         {
-            List<Title> titles = Common.History.Default.Titles.LastOrDefault()?.ToList() ?? new List<Title>();
+            ArrayOfTitle history = index != -1 ? Common.History.Default.Titles.ElementAtOrDefault(index) : Common.History.Default.Titles.LastOrDefault();
+            List<Title> titles = history?.title?.ToList() ?? new List<Title>();
 
             foreach (var title in titles)
             {
-                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.titleIDApplication;
+                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.baseTitleID ?? "";
 
                 if (latestVersions.TryGetValue(titleID, out uint version))
                 {

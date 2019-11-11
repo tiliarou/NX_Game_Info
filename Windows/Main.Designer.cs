@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Main));
             this.menuStrip = new System.Windows.Forms.MenuStrip();
             this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -39,22 +40,33 @@
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.optionsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.updateTitleKeysToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.updateVersionListToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.debugLogToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.historyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.helpToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            this.backgroundWorkerProcess = new System.ComponentModel.BackgroundWorker();
+            this.contextMenuStrip = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this.copyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
+            this.openFileLocationToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.statusStrip = new System.Windows.Forms.StatusStrip();
             this.toolStripStatusLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.objectListView = new BrightIdeasSoftware.ObjectListView();
             this.olvColumnTitleID = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnBaseTitleID = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnTitleName = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnDisplayVersion = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnVersion = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnLatestVersion = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
-            this.olvColumnFirmware = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnSystemUpdate = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnSystemVersion = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnApplicationVersion = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnMasterKey = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnTitleKey = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnPublisher = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.olvColumnLanguages = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnFileName = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnFileSize = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnType = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
@@ -63,7 +75,9 @@
             this.olvColumnSignature = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnPermission = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.olvColumnError = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.backgroundWorkerProcess = new System.ComponentModel.BackgroundWorker();
             this.menuStrip.SuspendLayout();
+            this.contextMenuStrip.SuspendLayout();
             this.statusStrip.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.objectListView)).BeginInit();
             this.SuspendLayout();
@@ -74,6 +88,7 @@
             this.menuStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.fileToolStripMenuItem,
             this.optionsToolStripMenuItem,
+            this.historyToolStripMenuItem,
             this.helpToolStripMenuItem});
             this.menuStrip.Location = new System.Drawing.Point(0, 0);
             this.menuStrip.Name = "menuStrip";
@@ -144,12 +159,20 @@
             // optionsToolStripMenuItem
             // 
             this.optionsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.updateTitleKeysToolStripMenuItem,
             this.updateVersionListToolStripMenuItem,
             this.toolStripSeparator3,
             this.debugLogToolStripMenuItem});
             this.optionsToolStripMenuItem.Name = "optionsToolStripMenuItem";
             this.optionsToolStripMenuItem.Size = new System.Drawing.Size(88, 29);
             this.optionsToolStripMenuItem.Text = "&Options";
+            // 
+            // updateTitleKeysToolStripMenuItem
+            // 
+            this.updateTitleKeysToolStripMenuItem.Name = "updateTitleKeysToolStripMenuItem";
+            this.updateTitleKeysToolStripMenuItem.Size = new System.Drawing.Size(252, 30);
+            this.updateTitleKeysToolStripMenuItem.Text = "Update &Title Keys";
+            this.updateTitleKeysToolStripMenuItem.Click += new System.EventHandler(this.updateTitleKeysToolStripMenuItem_Click);
             // 
             // updateVersionListToolStripMenuItem
             // 
@@ -171,6 +194,12 @@
             this.debugLogToolStripMenuItem.Text = "Debug &Log";
             this.debugLogToolStripMenuItem.CheckedChanged += new System.EventHandler(this.debugLogToolStripMenuItem_CheckedChanged);
             // 
+            // historyToolStripMenuItem
+            // 
+            this.historyToolStripMenuItem.Name = "historyToolStripMenuItem";
+            this.historyToolStripMenuItem.Size = new System.Drawing.Size(81, 29);
+            this.historyToolStripMenuItem.Text = "His&tory";
+            // 
             // helpToolStripMenuItem
             // 
             this.helpToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -186,13 +215,33 @@
             this.aboutToolStripMenuItem.Text = "&About";
             this.aboutToolStripMenuItem.Click += new System.EventHandler(this.aboutToolStripMenuItem_Click);
             // 
-            // backgroundWorkerProcess
+            // contextMenuStrip
             // 
-            this.backgroundWorkerProcess.WorkerReportsProgress = true;
-            this.backgroundWorkerProcess.WorkerSupportsCancellation = true;
-            this.backgroundWorkerProcess.DoWork += new System.ComponentModel.DoWorkEventHandler(this.backgroundWorkerProcess_DoWork);
-            this.backgroundWorkerProcess.ProgressChanged += new System.ComponentModel.ProgressChangedEventHandler(this.backgroundWorkerProcess_ProgressChanged);
-            this.backgroundWorkerProcess.RunWorkerCompleted += new System.ComponentModel.RunWorkerCompletedEventHandler(this.backgroundWorkerProcess_RunWorkerCompleted);
+            this.contextMenuStrip.ImageScalingSize = new System.Drawing.Size(24, 24);
+            this.contextMenuStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.copyToolStripMenuItem,
+            this.toolStripSeparator4,
+            this.openFileLocationToolStripMenuItem});
+            this.contextMenuStrip.Name = "contextMenuStrip";
+            this.contextMenuStrip.Size = new System.Drawing.Size(225, 70);
+            // 
+            // copyToolStripMenuItem
+            // 
+            this.copyToolStripMenuItem.Name = "copyToolStripMenuItem";
+            this.copyToolStripMenuItem.Size = new System.Drawing.Size(224, 30);
+            this.copyToolStripMenuItem.Text = "&Copy";
+            // 
+            // toolStripSeparator4
+            // 
+            this.toolStripSeparator4.Name = "toolStripSeparator4";
+            this.toolStripSeparator4.Size = new System.Drawing.Size(221, 6);
+            // 
+            // openFileLocationToolStripMenuItem
+            // 
+            this.openFileLocationToolStripMenuItem.Name = "openFileLocationToolStripMenuItem";
+            this.openFileLocationToolStripMenuItem.Size = new System.Drawing.Size(224, 30);
+            this.openFileLocationToolStripMenuItem.Text = "Open file locat&ion";
+            this.openFileLocationToolStripMenuItem.Click += new System.EventHandler(this.openFileLocationToolStripMenuItem_Click);
             // 
             // statusStrip
             // 
@@ -213,12 +262,18 @@
             // objectListView
             // 
             this.objectListView.AllColumns.Add(this.olvColumnTitleID);
+            this.objectListView.AllColumns.Add(this.olvColumnBaseTitleID);
             this.objectListView.AllColumns.Add(this.olvColumnTitleName);
             this.objectListView.AllColumns.Add(this.olvColumnDisplayVersion);
             this.objectListView.AllColumns.Add(this.olvColumnVersion);
             this.objectListView.AllColumns.Add(this.olvColumnLatestVersion);
-            this.objectListView.AllColumns.Add(this.olvColumnFirmware);
+            this.objectListView.AllColumns.Add(this.olvColumnSystemUpdate);
+            this.objectListView.AllColumns.Add(this.olvColumnSystemVersion);
+            this.objectListView.AllColumns.Add(this.olvColumnApplicationVersion);
             this.objectListView.AllColumns.Add(this.olvColumnMasterKey);
+            this.objectListView.AllColumns.Add(this.olvColumnTitleKey);
+            this.objectListView.AllColumns.Add(this.olvColumnPublisher);
+            this.objectListView.AllColumns.Add(this.olvColumnLanguages);
             this.objectListView.AllColumns.Add(this.olvColumnFileName);
             this.objectListView.AllColumns.Add(this.olvColumnFileSize);
             this.objectListView.AllColumns.Add(this.olvColumnType);
@@ -229,12 +284,18 @@
             this.objectListView.AllColumns.Add(this.olvColumnError);
             this.objectListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.olvColumnTitleID,
+            this.olvColumnBaseTitleID,
             this.olvColumnTitleName,
             this.olvColumnDisplayVersion,
             this.olvColumnVersion,
             this.olvColumnLatestVersion,
-            this.olvColumnFirmware,
+            this.olvColumnSystemUpdate,
+            this.olvColumnSystemVersion,
+            this.olvColumnApplicationVersion,
             this.olvColumnMasterKey,
+            this.olvColumnTitleKey,
+            this.olvColumnPublisher,
+            this.olvColumnLanguages,
             this.olvColumnFileName,
             this.olvColumnFileSize,
             this.olvColumnType,
@@ -246,6 +307,7 @@
             this.objectListView.Dock = System.Windows.Forms.DockStyle.Fill;
             this.objectListView.FullRowSelect = true;
             this.objectListView.GridLines = true;
+            this.objectListView.HideSelection = false;
             this.objectListView.Location = new System.Drawing.Point(0, 33);
             this.objectListView.Name = "objectListView";
             this.objectListView.ShowGroups = false;
@@ -253,6 +315,7 @@
             this.objectListView.TabIndex = 3;
             this.objectListView.UseCompatibleStateImageBehavior = false;
             this.objectListView.View = System.Windows.Forms.View.Details;
+            this.objectListView.CellRightClick += new System.EventHandler<BrightIdeasSoftware.CellRightClickEventArgs>(this.objectListView_CellRightClick);
             this.objectListView.Freezing += new System.EventHandler<BrightIdeasSoftware.FreezeEventArgs>(this.objectListView_Freezing);
             // 
             // olvColumnTitleID
@@ -262,6 +325,13 @@
             this.olvColumnTitleID.Hideable = false;
             this.olvColumnTitleID.Text = "Title ID";
             this.olvColumnTitleID.Width = 120;
+            // 
+            // olvColumnBaseTitleID
+            // 
+            this.olvColumnBaseTitleID.AspectName = "baseTitleID";
+            this.olvColumnBaseTitleID.CellPadding = null;
+            this.olvColumnBaseTitleID.Text = "Base Title ID";
+            this.olvColumnBaseTitleID.Width = 120;
             // 
             // olvColumnTitleName
             // 
@@ -292,11 +362,26 @@
             this.olvColumnLatestVersion.Text = "Latest Version";
             this.olvColumnLatestVersion.Width = 100;
             // 
-            // olvColumnFirmware
+            // olvColumnSystemUpdate
             // 
-            this.olvColumnFirmware.AspectName = "firmware";
-            this.olvColumnFirmware.CellPadding = null;
-            this.olvColumnFirmware.Text = "Firmware";
+            this.olvColumnSystemUpdate.AspectName = "systemUpdateString";
+            this.olvColumnSystemUpdate.CellPadding = null;
+            this.olvColumnSystemUpdate.Text = "System Update";
+            this.olvColumnSystemUpdate.Width = 100;
+            // 
+            // olvColumnSystemVersion
+            // 
+            this.olvColumnSystemVersion.AspectName = "systemVersionString";
+            this.olvColumnSystemVersion.CellPadding = null;
+            this.olvColumnSystemVersion.Text = "System Version";
+            this.olvColumnSystemVersion.Width = 100;
+            // 
+            // olvColumnApplicationVersion
+            // 
+            this.olvColumnApplicationVersion.AspectName = "applicationVersionString";
+            this.olvColumnApplicationVersion.CellPadding = null;
+            this.olvColumnApplicationVersion.Text = "Application Version";
+            this.olvColumnApplicationVersion.Width = 100;
             // 
             // olvColumnMasterKey
             // 
@@ -304,6 +389,27 @@
             this.olvColumnMasterKey.CellPadding = null;
             this.olvColumnMasterKey.Text = "MasterKey";
             this.olvColumnMasterKey.Width = 100;
+            // 
+            // olvColumnTitleKey
+            // 
+            this.olvColumnTitleKey.AspectName = "titleKey";
+            this.olvColumnTitleKey.CellPadding = null;
+            this.olvColumnTitleKey.Text = "Title Key";
+            this.olvColumnTitleKey.Width = 240;
+            // 
+            // olvColumnPublisher
+            // 
+            this.olvColumnPublisher.AspectName = "publisher";
+            this.olvColumnPublisher.CellPadding = null;
+            this.olvColumnPublisher.Text = "Publisher";
+            this.olvColumnPublisher.Width = 200;
+            // 
+            // olvColumnLanguages
+            // 
+            this.olvColumnLanguages.AspectName = "languagesString";
+            this.olvColumnLanguages.CellPadding = null;
+            this.olvColumnLanguages.Text = "Languages";
+            this.olvColumnLanguages.Width = 120;
             // 
             // olvColumnFileName
             // 
@@ -358,6 +464,14 @@
             this.olvColumnError.Text = "";
             this.olvColumnError.Width = 260;
             // 
+            // backgroundWorkerProcess
+            // 
+            this.backgroundWorkerProcess.WorkerReportsProgress = true;
+            this.backgroundWorkerProcess.WorkerSupportsCancellation = true;
+            this.backgroundWorkerProcess.DoWork += new System.ComponentModel.DoWorkEventHandler(this.backgroundWorkerProcess_DoWork);
+            this.backgroundWorkerProcess.ProgressChanged += new System.ComponentModel.ProgressChangedEventHandler(this.backgroundWorkerProcess_ProgressChanged);
+            this.backgroundWorkerProcess.RunWorkerCompleted += new System.ComponentModel.RunWorkerCompletedEventHandler(this.backgroundWorkerProcess_RunWorkerCompleted);
+            // 
             // Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 20F);
@@ -374,6 +488,7 @@
             this.Load += new System.EventHandler(this.Main_Load);
             this.menuStrip.ResumeLayout(false);
             this.menuStrip.PerformLayout();
+            this.contextMenuStrip.ResumeLayout(false);
             this.statusStrip.ResumeLayout(false);
             this.statusStrip.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.objectListView)).EndInit();
@@ -393,22 +508,33 @@
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem exitToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem optionsToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem updateTitleKeysToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem updateVersionListToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
         private System.Windows.Forms.ToolStripMenuItem debugLogToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem historyToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem helpToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem aboutToolStripMenuItem;
-        private System.ComponentModel.BackgroundWorker backgroundWorkerProcess;
+        private System.Windows.Forms.ContextMenuStrip contextMenuStrip;
+        private System.Windows.Forms.ToolStripMenuItem copyToolStripMenuItem;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
+        private System.Windows.Forms.ToolStripMenuItem openFileLocationToolStripMenuItem;
         private System.Windows.Forms.StatusStrip statusStrip;
         private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabel;
         private BrightIdeasSoftware.ObjectListView objectListView;
         private BrightIdeasSoftware.OLVColumn olvColumnTitleID;
+        private BrightIdeasSoftware.OLVColumn olvColumnBaseTitleID;
         private BrightIdeasSoftware.OLVColumn olvColumnTitleName;
         private BrightIdeasSoftware.OLVColumn olvColumnDisplayVersion;
         private BrightIdeasSoftware.OLVColumn olvColumnVersion;
         private BrightIdeasSoftware.OLVColumn olvColumnLatestVersion;
-        private BrightIdeasSoftware.OLVColumn olvColumnFirmware;
+        private BrightIdeasSoftware.OLVColumn olvColumnSystemUpdate;
+        private BrightIdeasSoftware.OLVColumn olvColumnSystemVersion;
+        private BrightIdeasSoftware.OLVColumn olvColumnApplicationVersion;
         private BrightIdeasSoftware.OLVColumn olvColumnMasterKey;
+        private BrightIdeasSoftware.OLVColumn olvColumnTitleKey;
+        private BrightIdeasSoftware.OLVColumn olvColumnPublisher;
+        private BrightIdeasSoftware.OLVColumn olvColumnLanguages;
         private BrightIdeasSoftware.OLVColumn olvColumnFileName;
         private BrightIdeasSoftware.OLVColumn olvColumnFileSize;
         private BrightIdeasSoftware.OLVColumn olvColumnType;
@@ -417,6 +543,7 @@
         private BrightIdeasSoftware.OLVColumn olvColumnSignature;
         private BrightIdeasSoftware.OLVColumn olvColumnPermission;
         private BrightIdeasSoftware.OLVColumn olvColumnError;
+        private System.ComponentModel.BackgroundWorker backgroundWorkerProcess;
     }
 }
 

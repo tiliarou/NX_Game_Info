@@ -7,12 +7,15 @@ using Foundation;
 using AppKit;
 using Bluegrams.Application;
 using LibHac;
+using OfficeOpenXml;
 using FsTitle = LibHac.Title;
 using Title = NX_Game_Info.Common.Title;
+using ArrayOfTitle = NX_Game_Info.Common.ArrayOfTitle;
 
 #pragma warning disable RECS0022 // A catch clause that catches System.Exception and has an empty body
 #pragma warning disable RECS0061 // Warns when a culture-aware 'EndsWith' call is used by default.
 #pragma warning disable RECS0063 // Warns when a culture-aware 'StartsWith' call is used by default.
+#pragma warning disable RECS0064 // Warns when a culture-aware 'string.CompareTo' call is used by default
 #pragma warning disable RECS0117 // Local variable has the same name as a member and hides it
 
 namespace NX_Game_Info
@@ -21,6 +24,8 @@ namespace NX_Game_Info
     {
         private TableViewDataSource tableViewDataSource;
         private TableViewDelegate tableViewDelegate;
+
+        private NSMenu historyMenu;
 
         private BackgroundWorker backgroundWorker;
         private bool userCancelled;
@@ -81,6 +86,10 @@ namespace NX_Game_Info
                 debugLog.State = Common.Settings.Default.DebugLog ? NSCellStateValue.On : NSCellStateValue.Off;
             }
 
+            historyMenu = Window.Menu?.ItemWithTitle("History")?.Submenu;
+
+            InitContextMenu(contextMenu.ItemWithTitle("Copy")?.Submenu);
+
             bool init = Process.initialize(out List<string> messages);
 
             foreach (var message in messages)
@@ -98,6 +107,8 @@ namespace NX_Game_Info
                 Environment.Exit(-1);
             }
 
+            Process.migrateSettings();
+
             backgroundWorker = new BackgroundWorker
             {
                 WorkerReportsProgress = true,
@@ -106,6 +117,18 @@ namespace NX_Game_Info
             backgroundWorker.DoWork += BackgroundWorker_DoWork;
             backgroundWorker.ProgressChanged += BackgroundWorker_ProgressChanged;
             backgroundWorker.RunWorkerCompleted += BackgroundWorker_RunWorkerCompleted;
+
+            int index = 0;
+            foreach (ArrayOfTitle history in Common.History.Default.Titles)
+            {
+                NSMenuItem menuItem = new NSMenuItem(String.Format("{0} ({1} files)", history.description, history.title.Count), new System.EventHandler(History));
+                historyMenu.AddItem(menuItem);
+
+                index++;
+            }
+
+            if (index > 0)
+                historyMenu.Items[index - 1].State = NSCellStateValue.On;
 
             titles = Process.processHistory();
 
@@ -132,8 +155,8 @@ namespace NX_Game_Info
             openPanel.CanChooseFiles = true;
             openPanel.CanChooseDirectories = false;
             openPanel.AllowsMultipleSelection = true;
-            openPanel.AllowedFileTypes = new string[] { "xci", "nsp", "nro" };
-            openPanel.DirectoryUrl = new NSUrl(!String.IsNullOrEmpty(Common.Settings.Default.InitialDirectory) && Directory.Exists(Common.Settings.Default.InitialDirectory) ? Common.Settings.Default.InitialDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            openPanel.AllowedFileTypes = Common.Settings.Default.NszExtension ? new string[] { "xci", "nsp", "xcz", "nsz", "nro" } : new string[] { "xci", "nsp", "nro" };
+            openPanel.DirectoryUrl = NSUrl.FromFilename(!String.IsNullOrEmpty(Common.Settings.Default.InitialDirectory) && Directory.Exists(Common.Settings.Default.InitialDirectory) ? Common.Settings.Default.InitialDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             openPanel.Title = "Open NX Game Files";
 
             Process.log?.WriteLine("\nOpen File");
@@ -176,7 +199,7 @@ namespace NX_Game_Info
             NSOpenPanel openPanel = NSOpenPanel.OpenPanel;
             openPanel.CanChooseFiles = false;
             openPanel.CanChooseDirectories = true;
-            openPanel.DirectoryUrl = new NSUrl(!String.IsNullOrEmpty(Common.Settings.Default.InitialDirectory) && Directory.Exists(Common.Settings.Default.InitialDirectory) ? Common.Settings.Default.InitialDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            openPanel.DirectoryUrl = NSUrl.FromFilename(!String.IsNullOrEmpty(Common.Settings.Default.InitialDirectory) && Directory.Exists(Common.Settings.Default.InitialDirectory) ? Common.Settings.Default.InitialDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             openPanel.Title = "Open NX Game Directory";
 
             Process.log?.WriteLine("\nOpen Directory");
@@ -248,7 +271,7 @@ namespace NX_Game_Info
             NSOpenPanel openPanel = NSOpenPanel.OpenPanel;
             openPanel.CanChooseFiles = false;
             openPanel.CanChooseDirectories = true;
-            openPanel.DirectoryUrl = new NSUrl(!String.IsNullOrEmpty(Common.Settings.Default.SDCardDirectory) && Directory.Exists(Common.Settings.Default.SDCardDirectory) ? Common.Settings.Default.SDCardDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            openPanel.DirectoryUrl = NSUrl.FromFilename(!String.IsNullOrEmpty(Common.Settings.Default.SDCardDirectory) && Directory.Exists(Common.Settings.Default.SDCardDirectory) ? Common.Settings.Default.SDCardDirectory : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             openPanel.Title = "Open SD Card";
 
             Process.log?.WriteLine("\nOpen SD Card");
@@ -280,7 +303,7 @@ namespace NX_Game_Info
         public void Export(NSMenuItem menuItem)
         {
             NSSavePanel savePanel = NSSavePanel.SavePanel;
-            savePanel.AllowedFileTypes = new string[] { "txt" };
+            savePanel.AllowedFileTypes = new string[] { "csv", "xlsx" };
             savePanel.Title = "Export Titles";
 
             Process.log?.WriteLine("\nExport Titles");
@@ -289,56 +312,213 @@ namespace NX_Game_Info
             {
                 if (result == (int)NSModalResponse.OK)
                 {
-                    using (var writer = new StreamWriter(savePanel.Url.Path))
+                    string filename = savePanel.Url.Path;
+
+                    if (filename.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
                     {
-                        Window.BeginSheet(sheet, ProgressComplete);
-                        userCancelled = false;
-
-                        writer.WriteLine("{0} {1}", NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleName").ToString(), NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString").ToString());
-                        writer.WriteLine("--------------------------------------------------------------\n");
-
-                        writer.WriteLine("Export titles starts at {0}\n", String.Format("{0:F}", DateTime.Now));
-
-                        uint index = 0, count = (uint)titles.Count;
-
-                        foreach (var title in titles)
+                        using (var writer = new StreamWriter(filename))
                         {
-                            if (userCancelled)
+                            Window.BeginSheet(sheet, ProgressComplete);
+                            userCancelled = false;
+
+                            char separator = Common.Settings.Default.CsvSeparator;
+                            if (separator != '\0')
                             {
-                                userCancelled = false;
-                                break;
+                                writer.WriteLine("sep={0}", separator);
+                            }
+                            else
+                            {
+                                separator = ',';
                             }
 
-                            message.StringValue = title.titleName ?? "";
-                            progress.DoubleValue = 100f * index++ / count;
+                            writer.WriteLine("# publisher {0} {1}", NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleName").ToString(), NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleShortVersionString").ToString());
+                            writer.WriteLine("# updated {0}", String.Format("{0:F}", DateTime.Now));
 
-                            writer.WriteLine("{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}",
-                                title.titleID,
-                                title.titleName,
-                                title.displayVersion,
-                                title.versionString,
-                                title.latestVersionString,
-                                title.firmware,
-                                title.masterkeyString,
-                                title.filename,
-                                title.filesizeString,
-                                title.typeString,
-                                title.distribution,
-                                title.structureString,
-                                title.signatureString,
-                                title.permissionString,
-                                title.error);
+                            writer.WriteLine(String.Join(separator.ToString(), Common.Title.Properties));
+
+                            uint index = 0, count = (uint)titles.Count;
+
+                            foreach (var title in titles)
+                            {
+                                if (userCancelled)
+                                {
+                                    userCancelled = false;
+                                    break;
+                                }
+
+                                message.StringValue = title.titleName ?? "";
+                                progress.DoubleValue = 100f * index++ / count;
+
+                                writer.WriteLine(String.Join(separator.ToString(), new string[] {
+                                    title.titleID.Quote(separator),
+                                    title.baseTitleID.Quote(separator),
+                                    title.titleName.Quote(separator),
+                                    title.displayVersion.Quote(separator),
+                                    title.versionString.Quote(separator),
+                                    title.latestVersionString.Quote(separator),
+                                    title.systemUpdateString.Quote(separator),
+                                    title.systemVersionString.Quote(separator),
+                                    title.applicationVersionString.Quote(separator),
+                                    title.masterkeyString.Quote(separator),
+                                    title.titleKey.Quote(separator),
+                                    title.publisher.Quote(separator),
+                                    title.languagesString.Quote(separator),
+                                    title.filename.Quote(separator),
+                                    title.filesizeString.Quote(separator),
+                                    title.typeString.Quote(separator),
+                                    title.distribution.ToString().Quote(separator),
+                                    title.structureString.Quote(separator),
+                                    title.signatureString.Quote(separator),
+                                    title.permissionString.Quote(separator),
+                                    title.error.Quote(separator),
+                                }));
+                            }
+
+                            Process.log?.WriteLine("\n{0} of {1} titles exported", index, titles.Count);
+
+                            Window.EndSheet(sheet);
+
+                            var alert = new NSAlert()
+                            {
+                                InformativeText = String.Format("{0} of {1} titles exported", index, titles.Count),
+                                MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                            };
+                            alert.RunModal();
                         }
+                    }
+                    else if (filename.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using (ExcelPackage excel = new ExcelPackage())
+                        {
+                            Window.BeginSheet(sheet, ProgressComplete);
+                            userCancelled = false;
 
-                        writer.WriteLine("\n{0} of {1} titles exported", index, titles.Count);
+                            ExcelWorksheet worksheet = excel.Workbook.Worksheets.Add(Common.History.Default.Titles.LastOrDefault().description ?? NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString());
 
-                        Process.log?.WriteLine("\n{0} of {1} titles exported", index, titles.Count);
+                            worksheet.Cells[1, 1, 1, Title.Properties.Count()].LoadFromArrays(new List<string[]> { Title.Properties });
+                            worksheet.Cells["1:1"].Style.Font.Bold = true;
+                            worksheet.Cells["1:1"].Style.Font.Color.SetColor(NSColor.White);
+                            worksheet.Cells["1:1"].Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                            worksheet.Cells["1:1"].Style.Fill.BackgroundColor.SetColor(NSColor.Blue.ShadowWithLevel((nfloat)0.6));
 
-                        Window.EndSheet(sheet);
+                            uint index = 0, count = (uint)titles.Count;
 
+                            foreach (var title in titles)
+                            {
+                                if (userCancelled)
+                                {
+                                    userCancelled = false;
+                                    break;
+                                }
+
+                                message.StringValue = title.titleName ?? "";
+                                progress.DoubleValue = 100f * index++ / count;
+
+                                var data = new List<string[]>
+                                {
+                                    new string[] {
+                                        title.titleID,
+                                        title.baseTitleID,
+                                        title.titleName,
+                                        title.displayVersion,
+                                        title.versionString,
+                                        title.latestVersionString,
+                                        title.systemUpdateString,
+                                        title.systemVersionString,
+                                        title.applicationVersionString,
+                                        title.masterkeyString,
+                                        title.titleKey,
+                                        title.publisher,
+                                        title.languagesString,
+                                        title.filename,
+                                        title.filesizeString,
+                                        title.typeString,
+                                        title.distribution.ToString(),
+                                        title.structureString,
+                                        title.signatureString,
+                                        title.permissionString,
+                                        title.error,
+                                    }
+                                };
+
+                                worksheet.Cells[(int)index + 1, 1].LoadFromArrays(data);
+
+                                string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.baseTitleID ?? "";
+
+                                Process.latestVersions.TryGetValue(titleID, out uint latestVersion);
+                                Process.versionList.TryGetValue(titleID, out uint version);
+                                Process.titleVersions.TryGetValue(titleID, out uint titleVersion);
+
+                                if (latestVersion < version || latestVersion < titleVersion)
+                                {
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Fill.BackgroundColor.SetColor(title.signature != true ? NSColor.Orange.ColorWithAlphaComponent((nfloat)0.1) : NSColor.Yellow.ColorWithAlphaComponent((nfloat)0.1));
+                                }
+                                else if (title.signature != true)
+                                {
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Fill.BackgroundColor.SetColor(NSColor.Gray.ColorWithAlphaComponent((nfloat)0.1));
+                                }
+
+                                if (title.permission == Title.Permission.Dangerous)
+                                {
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Font.Color.SetColor(NSColor.Red);
+                                }
+                                else if (title.permission == Title.Permission.Unsafe)
+                                {
+                                    worksheet.Cells[(int)index + 1, 1, (int)index + 1, Title.Properties.Count()].Style.Font.Color.SetColor(NSColor.Purple);
+                                }
+                            }
+
+                            ExcelRange range = worksheet.Cells[1, 1, (int)count + 1, Title.Properties.Count()];
+                            range.Style.Border.Top.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                            range.Style.Border.Left.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                            range.Style.Border.Right.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                            range.Style.Border.Bottom.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+
+                            worksheet.Column(1).Width = 18;
+                            worksheet.Column(2).Width = 18;
+                            worksheet.Column(3).AutoFit();
+                            worksheet.Column(3).Width = Math.Max(worksheet.Column(3).Width, 30);
+                            worksheet.Column(4).Width = 16;
+                            worksheet.Column(5).Width = 16;
+                            worksheet.Column(6).Width = 16;
+                            worksheet.Column(7).Width = 16;
+                            worksheet.Column(8).Width = 16;
+                            worksheet.Column(9).Width = 16;
+                            worksheet.Column(10).Width = 16;
+                            worksheet.Column(11).AutoFit();
+                            worksheet.Column(11).Width = Math.Max(worksheet.Column(11).Width, 36);
+                            worksheet.Column(12).AutoFit();
+                            worksheet.Column(12).Width = Math.Max(worksheet.Column(12).Width, 30);
+                            worksheet.Column(13).Width = 18;
+                            worksheet.Column(14).AutoFit();
+                            worksheet.Column(14).Width = Math.Max(worksheet.Column(14).Width, 54);
+                            worksheet.Column(15).Width = 10;
+                            worksheet.Column(16).Width = 10;
+                            worksheet.Column(17).Width = 12;
+                            worksheet.Column(18).Width = 12;
+                            worksheet.Column(19).Width = 10;
+                            worksheet.Column(20).Width = 10;
+                            worksheet.Column(21).Width = 40;
+
+                            excel.SaveAs(new FileInfo(filename));
+
+                            Window.EndSheet(sheet);
+
+                            var alert = new NSAlert()
+                            {
+                                InformativeText = String.Format("{0} of {1} titles exported", index, titles.Count),
+                                MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                            };
+                            alert.RunModal();
+                        }
+                    }
+                    else
+                    {
                         var alert = new NSAlert()
                         {
-                            InformativeText = String.Format("{0} of {1} titles exported", index, titles.Count),
+                            InformativeText = String.Format("This file type is not supported {0}", Path.GetExtension(filename)),
                             MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
                         };
                         alert.RunModal();
@@ -347,12 +527,50 @@ namespace NX_Game_Info
             });
         }
 
+        [Export("updateTitleKeys:")]
+        public void UpdateTitleKeys(NSMenuItem menuItem)
+        {
+            Window.BeginSheet(sheet, ProgressComplete);
+
+            title.StringValue = "";
+            message.StringValue = String.Format("Downloading from {0}", Common.TITLE_KEYS_URI);
+            progress.DoubleValue = 0;
+
+            int count = Process.keyset?.TitleKeys?.Count ?? 0;
+
+            if (Process.updateTitleKeys())
+            {
+                Process.log?.WriteLine("\nFound {0} updated title keys", (Process.keyset?.TitleKeys?.Count ?? 0) - count);
+
+                Window.EndSheet(sheet);
+
+                var alert = new NSAlert()
+                {
+                    InformativeText = String.Format("Found {0} updated title keys", (Process.keyset?.TitleKeys?.Count ?? 0) - count),
+                    MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                };
+                alert.RunModal();
+            }
+            else
+            {
+                Window.EndSheet(sheet);
+
+                var alert = new NSAlert()
+                {
+                    InformativeText = "Failed to download title keys",
+                    MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                };
+                alert.RunModal();
+            }
+        }
+
         [Export("updateVersionList:")]
         public void UpdateVersionList(NSMenuItem menuItem)
         {
             Window.BeginSheet(sheet, ProgressComplete);
 
-            message.StringValue = String.Format("Downloading from {0}", Common.TAGAYA_VERSIONLIST);
+            title.StringValue = "";
+            message.StringValue = String.Format("Downloading from {0}", Common.HAC_VERSIONLIST_URI);
             progress.DoubleValue = 0;
 
             if (Process.updateVersionList())
@@ -363,7 +581,7 @@ namespace NX_Game_Info
                 {
                     if (title.type == TitleType.Application || title.type == TitleType.Patch)
                     {
-                        if (Process.versionList.TryGetValue(title.titleIDApplication, out uint version))
+                        if (Process.versionList.TryGetValue(title.baseTitleID, out uint version))
                         {
                             if (title.latestVersion == unchecked((uint)-1) || version > title.latestVersion)
                             {
@@ -378,16 +596,22 @@ namespace NX_Game_Info
                 {
                     tableView.ReloadData();
 
-                    List<List<Title>> history = new List<List<Title>>();
-                    history.AddRange(Common.History.Default.Titles);
-                    history.Add(titles.ToList());
-
-                    Common.History.Default.Titles = new List<List<Title>>(history);
+                    ArrayOfTitle history = new ArrayOfTitle
+                    {
+                        description = DateTime.Now.ToString("dd MMMM yyyy HH:mm:ss"),
+                        title = titles.ToList(),
+                    };
+                    Common.History.Default.Titles.Add(history);
                     if (Common.History.Default.Titles.Count > Common.HISTORY_SIZE)
                     {
                         Common.History.Default.Titles.RemoveRange(0, Common.History.Default.Titles.Count - Common.HISTORY_SIZE);
                     }
                     Common.History.Default.Save();
+
+                    while (historyMenu.Items.Length > Common.HISTORY_SIZE)
+                    {
+                        historyMenu.RemoveItemAt(0);
+                    }
                 }
 
                 Process.log?.WriteLine("\n{0} titles have updated version", count);
@@ -438,11 +662,159 @@ namespace NX_Game_Info
             }
         }
 
+        void History(object sender, EventArgs e)
+        {
+            tableViewDataSource.Titles.Clear();
+            Process.latestVersions.Clear();
+
+            int index = 0;
+            foreach (NSMenuItem item in historyMenu.Items)
+            {
+                item.State = item == sender ? NSCellStateValue.On : NSCellStateValue.Off;
+
+                if (item == sender)
+                {
+                    titles = Process.processHistory(index);
+
+                    tableViewDataSource.Titles.AddRange(titles);
+                    tableView.ReloadData();
+                }
+
+                index++;
+            }
+        }
+
+        void InitContextMenu(NSMenu menu)
+        {
+            foreach (string property in Title.Properties)
+            {
+                NSMenuItem menuItem = new NSMenuItem(property, new System.EventHandler(Copy));
+                menu.AddItem(menuItem);
+            }
+        }
+
+        void Copy(object sender, EventArgs e)
+        {
+            Title title = tableViewDataSource.Titles?[(int)tableView.ClickedRow];
+            if (title != null)
+            {
+                string text = "";
+                string property = (sender as NSMenuItem).Title;
+
+                switch (property)
+                {
+                    case "Title ID":
+                        text = title.titleID;
+                        break;
+                    case "Base Title ID":
+                        text = title.baseTitleID;
+                        break;
+                    case "Title Name":
+                        text = title.titleName;
+                        break;
+                    case "Display Version":
+                        text = title.displayVersion;
+                        break;
+                    case "Version":
+                        text = title.versionString;
+                        break;
+                    case "Latest Version":
+                        text = title.latestVersionString;
+                        break;
+                    case "System Update":
+                        text = title.systemUpdateString;
+                        break;
+                    case "System Version":
+                        text = title.systemVersionString;
+                        break;
+                    case "Application Version":
+                        text = title.applicationVersionString;
+                        break;
+                    case "Masterkey":
+                        text = title.masterkeyString;
+                        break;
+                    case "Title Key":
+                        text = title.titleKey;
+                        break;
+                    case "Publisher":
+                        text = title.publisher;
+                        break;
+                    case "Languages":
+                        text = title.languagesString;
+                        break;
+                    case "Filename":
+                        text = title.filename;
+                        break;
+                    case "Filesize":
+                        text = title.filesizeString;
+                        break;
+                    case "Type":
+                        text = title.typeString;
+                        break;
+                    case "Distribution":
+                        text = title.distribution.ToString("G");
+                        break;
+                    case "Structure":
+                        text = title.structureString;
+                        break;
+                    case "Signature":
+                        text = title.signatureString;
+                        break;
+                    case "Permission":
+                        text = title.permissionString;
+                        break;
+                    case "Error":
+                        text = title.error;
+                        break;
+                }
+
+                if (!String.IsNullOrEmpty(text))
+                {
+                    var pboard = NSPasteboard.GeneralPasteboard;
+                    pboard.DeclareTypes(new string[] { NSPasteboard.NSPasteboardTypeString }, null);
+                    pboard.SetStringForType(text, NSPasteboard.NSPasteboardTypeString);
+                }
+                else
+                {
+                    var alert = new NSAlert()
+                    {
+                        InformativeText = String.Format("{0} is empty", property),
+                        MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                    };
+                    alert.RunModal();
+                }
+            }
+        }
+
+        [Export("showInFinder:")]
+        public void ShowInFinder(NSMenuItem menuItem)
+        {
+            Title title = tableViewDataSource.Titles?[(int)tableView.ClickedRow];
+            if (title != null)
+            {
+                string path = Path.GetDirectoryName(title.filename);
+                if (Directory.Exists(path))
+                {
+                    NSWorkspace.SharedWorkspace.OpenFile(path);
+                }
+                else
+                {
+                    var alert = new NSAlert()
+                    {
+                        InformativeText = String.Format("{0} is not a valid directory", path),
+                        MessageText = NSBundle.MainBundle.ObjectForInfoDictionary("CFBundleExecutable").ToString(),
+                    };
+                    alert.RunModal();
+                }
+            }
+        }
+
         void BackgroundWorker_DoWork(object sender, DoWorkEventArgs e)
         {
             BackgroundWorker worker = sender as BackgroundWorker;
 
             titles.Clear();
+            Process.latestVersions.Clear();
 
             if (e.Argument is ValueTuple<Worker, List<string>> argumentFile)
             {
@@ -482,7 +854,8 @@ namespace NX_Game_Info
                 if (argumentPath.Item1 == Worker.Directory && argumentPath.Item2 is string path)
                 {
                     List<string> filenames = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
-                        .Where(filename => filename.ToLower().EndsWith(".xci") || filename.ToLower().EndsWith(".nsp") || filename.ToLower().EndsWith(".nro")).ToList();
+                        .Where(filename => filename.ToLower().EndsWith(".xci") || filename.ToLower().EndsWith(".nsp") || filename.ToLower().EndsWith(".nro") ||
+                        (Common.Settings.Default.NszExtension && (filename.ToLower().EndsWith(".xcz") || filename.ToLower().EndsWith(".nsz")))).ToList();
                     filenames.Sort();
 
                     Process.log?.WriteLine("{0} files selected", filenames.Count);
@@ -576,16 +949,33 @@ namespace NX_Game_Info
 
                 tableView.ReloadData();
 
-                List<List<Title>> history = new List<List<Title>>();
-                history.AddRange(Common.History.Default.Titles);
-                history.Add(titles.ToList());
-
-                Common.History.Default.Titles = new List<List<Title>>(history);
+                ArrayOfTitle history = new ArrayOfTitle
+                {
+                    description = DateTime.Now.ToString("dd MMMM yyyy HH:mm:ss"),
+                    title = titles.ToList(),
+                };
+                Common.History.Default.Titles.Add(history);
                 if (Common.History.Default.Titles.Count > Common.HISTORY_SIZE)
                 {
                     Common.History.Default.Titles.RemoveRange(0, Common.History.Default.Titles.Count - Common.HISTORY_SIZE);
                 }
                 Common.History.Default.Save();
+
+                foreach (NSMenuItem item in historyMenu.Items)
+                {
+                    item.State = NSCellStateValue.Off;
+                }
+
+                NSMenuItem menuItem = new NSMenuItem(String.Format("{0} ({1} files)", history.description, history.title.Count), new System.EventHandler(History))
+                {
+                    State = NSCellStateValue.On,
+                };
+                historyMenu.AddItem(menuItem);
+
+                while (historyMenu.Items.Length > Common.HISTORY_SIZE)
+                {
+                    historyMenu.RemoveItemAt(0);
+                }
 
                 Window.EndSheet(sheet);
             }
@@ -641,22 +1031,42 @@ namespace NX_Game_Info
                     {
                         case "titleID":
                             return string.Compare(x.titleID, y.titleID) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "baseTitleID":
+                            return string.Compare(x.baseTitleID, y.baseTitleID) * (sortDescriptor.Ascending ? 1 : -1);
                         case "titleName":
                             return string.Compare(x.titleName, y.titleName) * (sortDescriptor.Ascending ? 1 : -1);
                         case "displayVersion":
-                            return string.Compare(x.displayVersion, y.displayVersion) * (sortDescriptor.Ascending ? 1 : -1);
-                        case "versionString":
-                            return string.Compare(x.versionString, y.versionString) * (sortDescriptor.Ascending ? 1 : -1);
-                        case "latestVersionString":
-                            return string.Compare(x.latestVersionString, y.latestVersionString) * (sortDescriptor.Ascending ? 1 : -1);
-                        case "firmware":
-                            return string.Compare(x.firmware, y.firmware) * (sortDescriptor.Ascending ? 1 : -1);
-                        case "masterkeyString":
-                            return string.Compare(x.masterkeyString, y.masterkeyString) * (sortDescriptor.Ascending ? 1 : -1);
+                            if (!Version.TryParse(x.displayVersion, out Version verx))
+                            {
+                                verx = new Version();
+                            }
+                            if (!Version.TryParse(y.displayVersion, out Version very))
+                            {
+                                very = new Version();
+                            }
+                            return verx.CompareTo(very) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "version":
+                            return x.version.CompareTo(y.version) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "latestVersion":
+                            return x.latestVersion.CompareTo(y.latestVersion) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "systemUpdate":
+                            return x.systemUpdate.CompareTo(y.systemUpdate) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "systemVersion":
+                            return x.systemVersion.CompareTo(y.systemVersion) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "applicationVersion":
+                            return x.applicationVersion.CompareTo(y.applicationVersion) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "masterkey":
+                            return x.masterkey.CompareTo(y.masterkey) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "titleKey":
+                            return string.Compare(x.titleKey, y.titleKey) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "publisher":
+                            return string.Compare(x.publisher, y.publisher) * (sortDescriptor.Ascending ? 1 : -1);
+                        case "languagesString":
+                            return string.Compare(x.languagesString, y.languagesString) * (sortDescriptor.Ascending ? 1 : -1);
                         case "filename":
                             return string.Compare(x.filename, y.filename) * (sortDescriptor.Ascending ? 1 : -1);
-                        case "filesizeString":
-                            return (int)((x.filesize - y.filesize) * (sortDescriptor.Ascending ? 1 : -1));
+                        case "filesize":
+                            return x.filesize.CompareTo(y.filesize) * (sortDescriptor.Ascending ? 1 : -1);
                         case "typeString":
                             return string.Compare(x.typeString, y.typeString) * (sortDescriptor.Ascending ? 1 : -1);
                         case "distribution":
@@ -707,6 +1117,9 @@ namespace NX_Game_Info
                 case "TitleID":
                     textField.StringValue = title.titleID ?? "";
                     break;
+                case "BaseTitleID":
+                    textField.StringValue = title.baseTitleID ?? "";
+                    break;
                 case "TitleName":
                     textField.StringValue = title.titleName ?? "";
                     break;
@@ -719,11 +1132,26 @@ namespace NX_Game_Info
                 case "LatestVersion":
                     textField.StringValue = title.latestVersionString ?? "";
                     break;
-                case "Firmware":
-                    textField.StringValue = title.firmware ?? "";
+                case "SystemUpdate":
+                    textField.StringValue = title.systemUpdateString ?? "";
+                    break;
+                case "SystemVersion":
+                    textField.StringValue = title.systemVersionString ?? "";
+                    break;
+                case "ApplicationVersion":
+                    textField.StringValue = title.applicationVersionString ?? "";
                     break;
                 case "MasterKey":
                     textField.StringValue = title.masterkeyString ?? "";
+                    break;
+                case "TitleKey":
+                    textField.StringValue = title.titleKey ?? "";
+                    break;
+                case "Publisher":
+                    textField.StringValue = title.publisher ?? "";
+                    break;
+                case "Languages":
+                    textField.StringValue = title.languagesString ?? "";
                     break;
                 case "FileName":
                     textField.StringValue = title.filename ?? "";
@@ -751,7 +1179,7 @@ namespace NX_Game_Info
                     break;
             }
 
-            string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.titleIDApplication;
+            string titleID = title.type == TitleType.AddOnContent ? title.titleID : title.baseTitleID ?? "";
 
             Process.latestVersions.TryGetValue(titleID, out uint latestVersion);
             Process.versionList.TryGetValue(titleID, out uint version);
@@ -778,6 +1206,16 @@ namespace NX_Game_Info
             textField.Cell.LineBreakMode = NSLineBreakMode.CharWrapping;
 
             return textField;
+        }
+    }
+
+    public static class ExcelColorExtension
+    {
+        public static void SetColor(this OfficeOpenXml.Style.ExcelColor excelColor, NSColor color)
+        {
+            NSColor rgb = color.UsingColorSpace(NSColorSpace.DeviceRGB);
+            nfloat alpha = rgb.AlphaComponent;
+            excelColor.SetColor(255, (int)((1 + alpha * (rgb.RedComponent - 1)) * 255), (int)((1 + alpha * (rgb.GreenComponent - 1)) * 255), (int)((1 + alpha * (rgb.BlueComponent - 1)) * 255));
         }
     }
 }
